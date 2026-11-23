@@ -1,0 +1,61 @@
+name: Build AutoHub APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "AutoHub-GitHub-Ready.zip"
+      - ".github/workflows/build-apk.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate source archive
+        run: |
+          test -s AutoHub-GitHub-Ready.zip
+          unzip -t AutoHub-GitHub-Ready.zip
+      - name: Extract project
+        run: |
+          unzip -oq AutoHub-GitHub-Ready.zip -d .
+          test -s app/build.gradle.kts
+          test -s app/src/main/AndroidManifest.xml
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+      - name: Build APK
+        run: gradle --no-daemon --stacktrace clean assembleDebug
+      - name: Verify and package
+        run: |
+          set -euo pipefail
+          mkdir -p APK
+          cp app/build/outputs/apk/debug/app-debug.apk APK/AutoHub.apk
+          test -s APK/AutoHub.apk
+          unzip -t APK/AutoHub.apk
+          zip -qr AutoHub-Full-Project.zip . -x ".git/*" ".gradle/*" "*/build/*" "AutoHub-Full-Project.zip"
+          unzip -l AutoHub-Full-Project.zip | grep -F "APK/AutoHub.apk"
+          test "$(unzip -p AutoHub-Full-Project.zip APK/AutoHub.apk | sha256sum | cut -d' ' -f1)" = "$(sha256sum APK/AutoHub.apk | cut -d' ' -f1)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AutoHub-APK
+          path: APK/AutoHub.apk
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AutoHub-Full-Project
+          path: AutoHub-Full-Project.zip
+          if-no-files-found: error
+          retention-days: 30
